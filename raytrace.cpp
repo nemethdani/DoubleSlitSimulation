@@ -434,7 +434,7 @@ class Scene {
 	vec3 La;
 public:
 	void build() {
-		vec3 eye = vec3(0, 0, 2), vup = vec3(0, 1, 0), lookat = vec3(0, 0, 0);
+		vec3 eye = vec3(0, -2, 0), vup = vec3(0, 0, 1), lookat = vec3(0, 0, 0);
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
@@ -447,8 +447,8 @@ public:
 		// for (int i = 0; i < 500; i++) 
 		// 	objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
 
-		objects.push_back(new Cilinder{TranslateMatrix(vec3(0,0,0)), material});
-		objects.push_back(new Hyperboloid_ofOneSheet{TranslateMatrix(vec3(0,0,0)), material});
+		objects.push_back(new Cilinder{ScaleMatrix(vec3(0.3,0.3,0.3)), material});
+		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(0.1,0.1,0.1)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
@@ -573,7 +573,7 @@ void onInitialization() {
 
 	std::vector<vec4> image(windowWidth * windowHeight);
 	long timeStart = glutGet(GLUT_ELAPSED_TIME);
-	//scene.render(image);
+	scene.render(image);
 	long timeEnd = glutGet(GLUT_ELAPSED_TIME);
 	printf("Rendering time: %d milliseconds\n", (timeEnd - timeStart));
 
