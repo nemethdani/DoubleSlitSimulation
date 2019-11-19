@@ -285,11 +285,42 @@ mat4 invert(mat4 mat){
 	
 }
 
+mat4 transpose(const mat4& mat){
+	mat4 r;
+	for(int i=0;i<4;++i){
+		for (int j=0;j<4;++j){
+			r.m[i][j]=mat.m[j][i];
+		}
+	}
+	return r;
+}
+
+mat4 operator*(float f, const mat4& m){
+	mat4 ret;
+	for(int i=0;i<4;++i){
+		for(int j=0;j<4;++j){
+			ret.m[i][j]=f*m.m[i][j];
+		}
+	}
+	return ret;
+}
+
 
 
 class QuadricSurface: public Intersectable{
 	mat4 matrix;
 	mat4 transformMatrix;
+
+	// https://marctenbosch.com/photon/mbosch_intersection.pdf
+	vec3 normal(vec3 position)const{
+		float n[3];
+		vec4 pos(position.x, position.y, position.z, 1);
+		for(int i=0;i<3;++i){
+			n[i]=dot(pos, vec4(matrix.m[i][0], matrix.m[i][1],matrix.m[i][2],matrix.m[i][3]));
+		}
+		vec3 N=2*vec3(n[0], n[1], n[2]);
+		return N;
+	}
 
 	public:
 		QuadricSurface(mat4 matrix, mat4 transformMatrix, Material* _material):
@@ -298,8 +329,72 @@ class QuadricSurface: public Intersectable{
 				{material=_material;};
 
 		Hit intersect(const Ray& ray) override{
-			mat4 Q=transformMatrix;
+			mat4 T_1=invert(transformMatrix);
+			mat4 Q=T_1*matrix*transpose(T_1);
+			vec4 S(ray.start.x, ray.start.y, ray.start.z, 1);
+
+			float A=0, B1=0, B2=0, C=0;
+			{
+				float a[3];
+				for(int j=0;j<3;++j){
+					vec3 c(Q.m[0][j], Q.m[1][j] , Q.m[2][j]);
+					a[j]=dot(ray.dir, c);
+				}
+				A=dot(vec3(a[0], a[1], a[2]), ray.dir);
+
+				
+				float b1[3];
+				for(int j=0;j<3;++j){
+					vec4 c(Q.m[0][j], Q.m[1][j] , Q.m[2][j], Q.m[3][j]);
+					b1[j]=dot(S, c);
+				}
+				B1=dot(vec3(b1[0], b1[1], b1[2]), ray.dir);
+
+				
+				float b2[4];
+				for(int j=0;j<4;++j){
+					vec3 c(Q.m[0][j], Q.m[1][j] , Q.m[2][j]);
+					b2[j]=dot(ray.dir, c);
+				}
+				B2=dot(vec4(b2[0], b2[1], b2[2], b2[3]), S);
+
+				
+				float c[4];
+				for(int j=0;j<4;++j){
+					vec4 cc(Q.m[0][j], Q.m[1][j] , Q.m[2][j], Q.m[3][j]);
+					c[j]=dot(S, cc);
+				}
+				C=dot(vec4(c[0], c[1], c[2], c[3]), S);
+			}
+
+			Hit hit;
+			float B=B1+B2;
+			float discr=B*B-4.0*A*C;
+			if (discr < 0) return hit;
+			float sqrt_discr = sqrtf(discr);
+			Float t1 = (-B + sqrt_discr) / 2.0f / A;	// t1 >= t2 for sure
+			if (t1 <= 0) return hit;
+			Float t2 = (-B - sqrt_discr) / 2.0f / A;
+			hit.t = (t2 > Float(0)) ? float(t2) : float(t1);
+			hit.position = ray.start + ray.dir * hit.t;
+
+			hit.normal = normal(hit.position);
+
+			hit.material = material;
+			return hit;
 		};
+};
+
+class Cilinder: public QuadricSurface{
+	public:
+		Cilinder(mat4 transformMatrix, Material* _material):
+			QuadricSurface((-1.0f)*ScaleMatrix(vec3(-1, -1, 0)), transformMatrix, _material){};
+};
+
+class Hyperboloid_ofOneSheet: public QuadricSurface{
+	public:
+		Hyperboloid_ofOneSheet(mat4 transformMatrix, Material* _material):
+			QuadricSurface( (-1.0f)*ScaleMatrix(vec3(-1, -1, 1)), transformMatrix, _material){};
 };
 
 class Camera {
@@ -349,8 +444,11 @@ public:
 
 		vec3 kd(0.3f, 0.2f, 0.1f), ks(2, 2, 2);
 		Material * material = new Material(kd, ks, 50);
-		for (int i = 0; i < 500; i++) 
-			objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
+		// for (int i = 0; i < 500; i++) 
+		// 	objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
+
+		objects.push_back(new Cilinder{TranslateMatrix(vec3(0,0,0)), material});
+		objects.push_back(new Hyperboloid_ofOneSheet{TranslateMatrix(vec3(0,0,0)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
@@ -468,7 +566,7 @@ void invertTest(){
 // Initialization, create an OpenGL context
 void onInitialization() {
 
-	invertTest();
+	//invertTest();
 
 	glViewport(0, 0, windowWidth, windowHeight);
 	scene.build();
