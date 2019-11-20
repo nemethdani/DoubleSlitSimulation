@@ -126,14 +126,24 @@ using namespace smartfloat;
 bool operator==(const vec2& v1, const vec2& v2){
 	return Float(v1.x)==Float(v2.x) && (Float(v1.y)==Float(v2.y));
 }
-using namespace smartfloat;
+bool operator==(const vec3& v1, const vec3& v2){
+	return Float(v1.x)==Float(v2.x) && (Float(v1.y)==Float(v2.y)) && Float(v1.z)==Float(v2.z);
+}
+
 
 // Az alábbiakat a raytracing mintaprogram módosítával készítettem
 
 struct Material {
 	vec3 ka, kd, ks;
 	float  shininess;
-	Material(vec3 _kd, vec3 _ks, float _shininess) : ka(_kd * M_PI), kd(_kd), ks(_ks) { shininess = _shininess; }
+	bool rough;
+	Material(vec3 _kd, vec3 _ks, float _shininess) : ka(_kd * M_PI), kd(_kd), ks(_ks) { 
+		shininess = _shininess;
+		if(_kd==vec3(0,0,0) && _ks==vec3(0,0,0)){
+			rough=false;
+		}
+		else rough=true;
+	}
 };
 
 struct Hit {
@@ -148,42 +158,50 @@ struct Ray {
 	Ray(vec3 _start, vec3 _dir) { start = _start; dir = normalize(_dir); }
 };
 
-class Intersectable {
+class Transformable{
+	protected:
+		mat4 transformMatrix;
+	public:
+		Transformable(const mat4& transformMatrix=TranslateMatrix(vec3(0,0,0))):transformMatrix(transformMatrix){};
+};
+
+class Intersectable: public Transformable {
 protected:
 	Material * material;
 public:
 	virtual Hit intersect(const Ray& ray) = 0;
+	Intersectable(const mat4& transformMatrix):Transformable(transformMatrix){};
 };
 
-struct Sphere : public Intersectable {
-	vec3 center;
-	float radius;
+// struct Sphere : public Intersectable {
+// 	vec3 center;
+// 	float radius;
 
-	Sphere(const vec3& _center, float _radius, Material* _material) {
-		center = _center;
-		radius = _radius;
-		material = _material;
-	}
+// 	Sphere(const vec3& _center, float _radius, Material* _material) {
+// 		center = _center;
+// 		radius = _radius;
+// 		material = _material;
+// 	}
 
-	Hit intersect(const Ray& ray) {
-		Hit hit;
-		vec3 dist = ray.start - center;
-		float a = dot(ray.dir, ray.dir);
-		float b = dot(dist, ray.dir) * 2.0f;
-		float c = dot(dist, dist) - radius * radius;
-		float discr = b * b - 4.0f * a * c;
-		if (discr < 0) return hit;
-		float sqrt_discr = sqrtf(discr);
-		float t1 = (-b + sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
-		float t2 = (-b - sqrt_discr) / 2.0f / a;
-		if (t1 <= 0) return hit;
-		hit.t = (t2 > 0) ? t2 : t1;
-		hit.position = ray.start + ray.dir * hit.t;
-		hit.normal = (hit.position - center) * (1.0f / radius);
-		hit.material = material;
-		return hit;
-	}
-};
+// 	Hit intersect(const Ray& ray) {
+// 		Hit hit;
+// 		vec3 dist = ray.start - center;
+// 		float a = dot(ray.dir, ray.dir);
+// 		float b = dot(dist, ray.dir) * 2.0f;
+// 		float c = dot(dist, dist) - radius * radius;
+// 		float discr = b * b - 4.0f * a * c;
+// 		if (discr < 0) return hit;
+// 		float sqrt_discr = sqrtf(discr);
+// 		float t1 = (-b + sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
+// 		float t2 = (-b - sqrt_discr) / 2.0f / a;
+// 		if (t1 <= 0) return hit;
+// 		hit.t = (t2 > 0) ? t2 : t1;
+// 		hit.position = ray.start + ray.dir * hit.t;
+// 		hit.normal = (hit.position - center) * (1.0f / radius);
+// 		hit.material = material;
+// 		return hit;
+// 	}
+// };
 
 struct mat2{
 	mat2(){};
@@ -309,7 +327,7 @@ mat4 operator*(float f, const mat4& m){
 
 class QuadricSurface: public Intersectable{
 	mat4 matrix;
-	mat4 transformMatrix;
+	
 
 	// https://marctenbosch.com/photon/mbosch_intersection.pdf
 	vec3 normal(vec3 position)const{
@@ -324,8 +342,8 @@ class QuadricSurface: public Intersectable{
 
 	public:
 		QuadricSurface(mat4 matrix, mat4 transformMatrix, Material* _material):
-			matrix(matrix),
-			transformMatrix(transformMatrix)
+			Intersectable(transformMatrix),
+			matrix(matrix)
 				{material=_material;};
 
 		Hit intersect(const Ray& ray) override{
@@ -414,24 +432,75 @@ public:
 	}
 };
 
-struct Light {
-	vec3 direction;
+struct Light: public Transformable{
+	virtual vec3 incidentRadiance(Hit hit)const=0;
+	virtual vec3 direction(Hit hit)const=0;
 	vec3 Le;
-	Light(vec3 _direction, vec3 _Le) {
-		direction = normalize(_direction);
+	using Transformable::Transformable;
+};
+
+struct DirectionalLight: public Light {
+	vec3 dir;
+	DirectionalLight(vec3 _direction, vec3 _Le, const mat4& transformMatrix=TranslateMatrix(vec3(0,0,0))): Light(transformMatrix) {
+		dir= normalize(_direction);
 		Le = _Le;
 	}
+	vec3 incidentRadiance(Hit hit)const override{return Le;}
+	vec3 direction(Hit hit)const override{return dir;}
 };
 
 float rnd() { return (float)rand() / RAND_MAX; }
 
 const float epsilon = 0.0001f;
 
+//tantárgyi segédanyag
+// Bezier using Bernstein polynomials
+// class BezierCurve : public Curve {
+// 	float B(int i, float t) {
+// 		int n = wCtrlPoints.size() - 1; // n deg polynomial = n+1 pts!
+// 		float choose = 1;
+// 		for (int j = 1; j <= i; j++) choose *= (float)(n - j + 1) / j;
+// 		return choose * pow(t, i) * pow(1 - t, n - i);
+// 	}
+// public:
+// 	vec4 r(float t) {
+// 		vec4 wPoint = vec4(0, 0, 0, 0);
+// 		for (unsigned int n = 0; n < wCtrlPoints.size(); n++) wPoint += wCtrlPoints[n] * B(n, t);
+// 		return wPoint;
+// 	}
+// };
+
 class Scene {
 	std::vector<Intersectable *> objects;
 	std::vector<Light *> lights;
 	Camera camera;
 	vec3 La;
+
+	bool shadowIntersect(Ray ray)const {	// for directional lights
+		for (Intersectable * object : objects) if (object->intersect(ray).t > 0) return true;
+		return false;
+	}
+
+	vec3 DirectLight(const Hit& hit, const Ray& ray)const{
+		vec3 outRadiance=hit.material->ka * La;
+
+		
+		
+
+		for(Light* light:lights){
+			float cosTheta = dot(hit.normal, light->direction(hit));
+			Ray shadowRay(hit.position + hit.normal * epsilon, light->direction(hit));
+			if (cosTheta > 0 && !shadowIntersect(shadowRay)) {	// shadow computation
+	 			outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->kd * cosTheta;
+	 			vec3 halfway = normalize(-ray.dir + light->direction(hit));
+	 			float cosDelta = dot(hit.normal, halfway);
+	 			if (cosDelta > 0) outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->ks * powf(cosDelta, hit.material->shininess);
+	 		}
+			
+		}
+		return outRadiance;
+	};
+
 public:
 	void build() {
 		vec3 eye = vec3(0, -2, 0), vup = vec3(0, 0, 1), lookat = vec3(0, 0, 0);
@@ -440,7 +509,7 @@ public:
 
 		La = vec3(0.4f, 0.4f, 0.4f);
 		vec3 lightDirection(1, 1, 1), Le(2, 2, 2);
-		lights.push_back(new Light(lightDirection, Le));
+		lights.push_back(new DirectionalLight(lightDirection, Le));
 
 		vec3 kd(0.3f, 0.2f, 0.1f), ks(2, 2, 2);
 		Material * material = new Material(kd, ks, 50);
@@ -471,26 +540,46 @@ public:
 		return bestHit;
 	}
 
-	bool shadowIntersect(Ray ray) {	// for directional lights
-		for (Intersectable * object : objects) if (object->intersect(ray).t > 0) return true;
-		return false;
-	}
+	
 
-	vec3 trace(Ray ray, int depth = 0) {
+	// vec3 trace(Ray ray, int depth = 0) {
+	// 	Hit hit = firstIntersect(ray);
+	// 	if (hit.t < 0) return La;
+	// 	vec3 outRadiance = hit.material->ka * La;
+	// 	for (Light * light : lights) {
+	// 		Ray shadowRay(hit.position + hit.normal * epsilon, light->direction(hit));
+	// 		float cosTheta = dot(hit.normal, light->direction(hit));
+	// 		if (cosTheta > 0 && !shadowIntersect(shadowRay)) {	// shadow computation
+	// 			outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->kd * cosTheta;
+	// 			vec3 halfway = normalize(-ray.dir + light->direction(hit));
+	// 			float cosDelta = dot(hit.normal, halfway);
+	// 			if (cosDelta > 0) outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->ks * powf(cosDelta, hit.material->shininess);
+	// 		}
+	// 	}
+	// 	return outRadiance;
+	// }
+
+	vec3 trace(Ray ray, int d=0, int maxdepth=8) {
+		if (d > maxdepth) return La;
 		Hit hit = firstIntersect(ray);
-		if (hit.t < 0) return La;
-		vec3 outRadiance = hit.material->ka * La;
-		for (Light * light : lights) {
-			Ray shadowRay(hit.position + hit.normal * epsilon, light->direction);
-			float cosTheta = dot(hit.normal, light->direction);
-			if (cosTheta > 0 && !shadowIntersect(shadowRay)) {	// shadow computation
-				outRadiance = outRadiance + light->Le * hit.material->kd * cosTheta;
-				vec3 halfway = normalize(-ray.dir + light->direction);
-				float cosDelta = dot(hit.normal, halfway);
-				if (cosDelta > 0) outRadiance = outRadiance + light->Le * hit.material->ks * powf(cosDelta, hit.material->shininess);
-			}
-		}
-		return outRadiance;
+		if(hit.t < 0) return La; // nothing
+		vec3 outRad(0, 0, 0);
+		if(hit.material->rough) outRad  =  DirectLight(hit, ray);
+
+		// if(hit.material->reflective){
+		// 	vec3 reflectionDir = reflect(ray.dir,N);
+		// 	Ray reflectRay(r + N, reflectionDir, ray.out);
+		// 	outRad += trace(reflectRay,d+1)*Fresnel(ray.dir,N);
+		// }
+		// if(hit.material->refractive) {
+		// 	ior = (ray.out) ? n.x : 1/n.x;
+		// 	vec3 refractionDir = refract(ray.dir,N,ior);
+		// 	if (length(refractionDir) > 0) {
+		// 	Ray refractRay(r - N, refractionDir, !ray.out);
+		// 	outRad += trace(refractRay,d+1)*(vec3(1,1,1)–Fresnel(ray.dir,N));
+		// 	}
+		// }
+		return outRad;
 	}
 };
 
