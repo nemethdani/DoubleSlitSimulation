@@ -136,13 +136,16 @@ bool operator==(const vec3& v1, const vec3& v2){
 struct Material {
 	vec3 ka, kd, ks;
 	float  shininess;
-	bool rough;
+	float reffractiveIndex;
+	bool rough, reflective, refractive;
 	Material(vec3 _kd, vec3 _ks, float _shininess) : ka(_kd * M_PI), kd(_kd), ks(_ks) { 
 		shininess = _shininess;
 		if(_kd==vec3(0,0,0) && _ks==vec3(0,0,0)){
 			rough=false;
 		}
 		else rough=true;
+		reflective=refractive=false;
+		reffractiveIndex=1.000293; //air
 	}
 };
 
@@ -449,26 +452,107 @@ struct DirectionalLight: public Light {
 	vec3 direction(Hit hit)const override{return dir;}
 };
 
+class Curve{
+	protected:
+		std::vector<vec2> wCtrlPoints;
+	public:
+		Curve(std::vector<vec2> ctrl):wCtrlPoints(ctrl){};
+};
+
+//tantárgyi segédanyag
+//Bezier using Bernstein polynomials
+class BezierCurve : public Curve {
+	float B(int i, float t) {
+		int n = wCtrlPoints.size() - 1; // n deg polynomial = n+1 pts!
+		float choose = 1;
+		for (int j = 1; j <= i; j++) choose *= (float)(n - j + 1) / j;
+		return choose * pow(t, i) * pow(1 - t, n - i);
+	}
+public:
+	using Curve::Curve;
+	vec2 r(float t) {
+		vec2 wPoint = vec2(0, 0);
+		for (unsigned int n = 0; n < wCtrlPoints.size(); n++) wPoint = wPoint+ wCtrlPoints[n] * B(n, t);
+		return wPoint;
+	}
+};
+
+// http://cg.iit.bme.hu/portal/sites/default/files/oktatott%20t%C3%A1rgyak/sz%C3%A1m%C3%ADt%C3%B3g%C3%A9pes%20grafika/geometri%C3%A1k%20%C3%A9s%20algebr%C3%A1k/complex.cpp
+//--------------------------
+struct Complex {
+//--------------------------
+	float x, y;
+
+	Complex(float x0 = 0, float y0 = 0) { x = x0, y = y0; }
+	Complex operator+(Complex r) { return Complex(x + r.x, y + r.y); }
+	Complex operator-(Complex r) { return Complex(x - r.x, y - r.y); }
+	Complex operator*(Complex r) { return Complex(x * r.x - y * r.y, x * r.y + y * r.x); }
+	Complex operator/(Complex r) {
+		float l = r.x * r.x + r.y * r.y;
+		return (*this) * Complex(r.x / l, -r.y / l);
+	}
+};
+
+Complex Polar(float r, float phi) {
+	return Complex(r * cosf(phi), r * sinf(phi));
+}
+
+vec4 centroid(const std::vector<vec4>& v){
+			vec4 centroid(0,0,0,0);
+			for(auto l: v) centroid=centroid+l;
+			centroid=centroid/v.size();
+			return centroid;
+}
+
+class TwoSlitLight: public Light{
+	std::vector<vec4> lampsXYZ;
+	float Amplitude=1;
+	vec4 center; //pontszerű fényforrás
+	float wavelength=0.526; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
+	vec3 rgb=vec3(78.0f/255.0f, 1, 0); //rgb(78,255, 0): kell normalizálni? számítás: https://academo.org/demos/wavelength-to-colour-relationship/
+	public:
+		TwoSlitLight(float targetRadiusOfCilinder=6, float targetUdistance=3, const mat4& transformMatrix=TranslateMatrix(vec3(0,0,0))):
+			Light(transformMatrix)
+			{
+			float baseUdistance=targetUdistance/targetRadiusOfCilinder;
+			float phi=2*asinf(baseUdistance/2);
+			std::vector<vec2> ctrpoints={vec2(-phi/2, 5), vec2(-phi/2, -5), vec2(phi/2, -5), vec2(phi/2, 5)};
+			BezierCurve bc(std::move(ctrpoints));
+			std::vector<vec2> lamps; // angle, Z
+			lamps.reserve(100);
+			for(Float t=0;t<=100-1; t+=1/(100-1)) lamps.push_back(bc.r(float(t)));
+			
+			lampsXYZ.reserve(100);
+			for(vec2 l:lamps){
+				lampsXYZ.emplace_back(cosf(l.x), sinf(l.x), l.y, 1);
+			}
+			for(vec4 l:lampsXYZ) l=l*transformMatrix;
+			center=centroid(lampsXYZ);
+
+		}
+		vec3 incidentRadiance(Hit hit)const override{
+			Complex superposition;
+			for(vec4 lamp: lampsXYZ){
+				float distance=length(hit.position-vec3(lamp.x, lamp.y, lamp.z));
+				float k=2*(M_PI)/wavelength; 
+				superposition=superposition+Polar(Amplitude/distance, k*distance); //t=0 => omega*t=0, fáziseltolódás=0 
+			}
+			
+			float energy=superposition.x*superposition.x+superposition.y*superposition.y; //R^2=x^2+y^2
+			vec3 rad=energy*rgb;
+			return rad;
+		}
+		vec3 direction(Hit hit)const override{
+			vec3 ret= vec3(center.x, center.y, center.z)-hit.position;
+			return ret;
+		}
+};
+
 float rnd() { return (float)rand() / RAND_MAX; }
 
 const float epsilon = 0.0001f;
 
-//tantárgyi segédanyag
-// Bezier using Bernstein polynomials
-// class BezierCurve : public Curve {
-// 	float B(int i, float t) {
-// 		int n = wCtrlPoints.size() - 1; // n deg polynomial = n+1 pts!
-// 		float choose = 1;
-// 		for (int j = 1; j <= i; j++) choose *= (float)(n - j + 1) / j;
-// 		return choose * pow(t, i) * pow(1 - t, n - i);
-// 	}
-// public:
-// 	vec4 r(float t) {
-// 		vec4 wPoint = vec4(0, 0, 0, 0);
-// 		for (unsigned int n = 0; n < wCtrlPoints.size(); n++) wPoint += wCtrlPoints[n] * B(n, t);
-// 		return wPoint;
-// 	}
-// };
+
 
 class Scene {
 	std::vector<Intersectable *> objects;
@@ -483,10 +567,6 @@ class Scene {
 
 	vec3 DirectLight(const Hit& hit, const Ray& ray)const{
 		vec3 outRadiance=hit.material->ka * La;
-
-		
-		
-
 		for(Light* light:lights){
 			float cosTheta = dot(hit.normal, light->direction(hit));
 			Ray shadowRay(hit.position + hit.normal * epsilon, light->direction(hit));
@@ -500,6 +580,21 @@ class Scene {
 		}
 		return outRadiance;
 	};
+
+	vec3 reflect(vec3 inDir, vec3 normal) {
+		return inDir - normal * dot(normal, inDir) * 2.0f;
+	};
+
+	// vec3 Fresnel(vec3 inDir, vec3 normal, Hit hit) {
+	// 	float cosa = -dot(inDir, normal); 
+	// 	vec3 one(1, 1, 1);
+	// 	float airReffractiveIndex=1.000293; //air
+	// 	float materialRefreactiveIndex=(*(hit.material)).reffractiveIndex;
+	// 	float n_=materialRefreactiveIndex/airReffractiveIndex;
+	// 	vec3 n(n_, n_, n_);
+	// 	vec3 F0 = ((n - one)*(n - one) + kappa*kappa) /	((n+one)*(n+one) + kappa*kappa); 
+	// 	return F0 + (one – F0) * pow(1-cosa, 5); 
+	// }
 
 public:
 	void build() {
@@ -567,8 +662,8 @@ public:
 		if(hit.material->rough) outRad  =  DirectLight(hit, ray);
 
 		// if(hit.material->reflective){
-		// 	vec3 reflectionDir = reflect(ray.dir,N);
-		// 	Ray reflectRay(r + N, reflectionDir, ray.out);
+		// 	vec3 reflectionDir = reflect(ray.dir,hit.normal);
+		// 	Ray reflectRay(hit.position + hit.normal * epsilon, reflectionDir);
 		// 	outRad += trace(reflectRay,d+1)*Fresnel(ray.dir,N);
 		// }
 		// if(hit.material->refractive) {
