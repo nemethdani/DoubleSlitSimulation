@@ -520,7 +520,8 @@ class TwoSlitLight: public Light{
 			BezierCurve bc(std::move(ctrpoints));
 			std::vector<vec2> lamps; // angle, Z
 			lamps.reserve(100);
-			for(Float t=0;t<=100-1; t+=1/(100-1)) lamps.push_back(bc.r(float(t)));
+			for(Float t=0.0f;t<=99.0f/100.0f; t+=1.0f/(100.0f-1.0f))
+				lamps.push_back(bc.r(float(t)));
 			
 			lampsXYZ.reserve(100);
 			for(vec2 l:lamps){
@@ -598,7 +599,7 @@ class Scene {
 
 public:
 	void build() {
-		vec3 eye = vec3(0, -2, 0), vup = vec3(0, 0, 1), lookat = vec3(0, 0, 0);
+		vec3 eye = vec3(7, -15, 0), vup = vec3(0, 0, 1), lookat = vec3(19, 0, 0);
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
@@ -611,8 +612,11 @@ public:
 		// for (int i = 0; i < 500; i++) 
 		// 	objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
 
-		objects.push_back(new Cilinder{ScaleMatrix(vec3(0.3,0.3,0.3)), material});
-		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(0.1,0.1,0.1)), material});
+		mat4 cylinderTransform=ScaleMatrix(vec3(6,6,1));
+		objects.push_back(new Cilinder{cylinderTransform, material});
+		
+		lights.push_back(new TwoSlitLight{6, 3, cylinderTransform });
+		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*TranslateMatrix(vec3(19, 0,0)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
@@ -621,6 +625,7 @@ public:
 			for (int X = 0; X < windowWidth; X++) {
 				vec3 color = trace(camera.getRay(X, Y));
 				image[Y * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
+				//printf("%d" "%d" "%s", X, X, "rendered\n");
 			}
 		}
 	}
