@@ -511,17 +511,17 @@ vec4 centroid(const std::vector<vec4>& v){
 const float epsilon = 0.0001f;
 class TwoSlitLight: public Light{
 	std::vector<vec4> lampsXYZ;
-	float Amplitude=1;
+	float Amplitude=0.01;
 	vec4 cntr; //pontszerű fényforrás
-	float wavelength=0.24; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
-	vec3 rgb=vec3(78.0f/255.0f, 1, 0); //rgb(78,255, 0): kell normalizálni? számítás: https://academo.org/demos/wavelength-to-colour-relationship/
+	float wavelength=0.526; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
+	vec3 rgb=vec3(78.0f, 1.0f, 0.0f); //rgb(78,255, 0): kell normalizálni? számítás: https://academo.org/demos/wavelength-to-colour-relationship/
 	public:
 		TwoSlitLight(float targetRadiusOfCilinder=6, float targetUdistance=3, const mat4& transformMatrix=TranslateMatrix(vec3(0,0,0))):
 			Light(transformMatrix)
 			{
 			float baseUdistance=targetUdistance/targetRadiusOfCilinder;
 			float phi=2*asinf(baseUdistance/2);
-			std::vector<vec2> ctrpoints={vec2(-phi/2, 5), vec2(-phi/2, -5), vec2(phi/2, -5), vec2(phi/2, 5)};
+			std::vector<vec2> ctrpoints={vec2(-phi/2, 0.05f), vec2(-phi/2, -0.05f), vec2(phi/2, -0.05f), vec2(phi/2, 0.05f)};
 			BezierCurve bc(std::move(ctrpoints));
 			std::vector<vec2> lamps; // angle, Z
 			lamps.reserve(100);
@@ -536,7 +536,8 @@ class TwoSlitLight: public Light{
 			cntr=centroid(lampsXYZ);
 			cntr=cntr*TranslateMatrix(vec3(1-cosf(phi/2)+epsilon,0,0)); //eltoljuk, hogy a henger szélén legyen(ne benne)
 			cntr=cntr*transformMatrix;
-			for(vec4 l:lampsXYZ) l=l*transformMatrix; //translatematrix eltolni mindet epsilonnal, hogy ne a hengeren legyenek, hanem kívül
+			for(auto&& l:lampsXYZ)
+				l=l*transformMatrix;
 			
 			
 
@@ -619,7 +620,7 @@ class Scene {
 
 public:
 	void build() {
-		vec3 eye = vec3(50, 0, 0), vup = vec3(0, 0, 1), lookat = vec3(0, 0, 0);
+		vec3 eye = vec3(6, 0, 0), vup = vec3(0, 0, 1), lookat = vec3(30, 0, 0);
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
@@ -636,7 +637,7 @@ public:
 		objects.push_back(new Cilinder{cylinderTransform, material});
 		
 		lights.push_back(new TwoSlitLight{6, 3, cylinderTransform });
-		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*TranslateMatrix(vec3(100, 0,0)), material});
+		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*TranslateMatrix(vec3(30, 0,0)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
