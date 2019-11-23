@@ -340,7 +340,7 @@ class QuadricSurface: public Intersectable{
 			n[i]=dot(pos, vec4(matrix.m[i][0], matrix.m[i][1],matrix.m[i][2],matrix.m[i][3]));
 		}
 		vec3 N=2*vec3(n[0], n[1], n[2]);
-		return N;
+		return normalize(N);
 	}
 
 	public:
@@ -438,6 +438,7 @@ public:
 struct Light: public Transformable{
 	virtual vec3 incidentRadiance(Hit hit)const=0;
 	virtual vec3 direction(Hit hit)const=0;
+	virtual vec3 center()const=0;
 	vec3 Le;
 	using Transformable::Transformable;
 };
@@ -450,6 +451,10 @@ struct DirectionalLight: public Light {
 	}
 	vec3 incidentRadiance(Hit hit)const override{return Le;}
 	vec3 direction(Hit hit)const override{return dir;}
+	vec3 center()const override{
+		float inf=1.0f/0.0f;
+		return vec3(inf, inf, inf);
+	}
 };
 
 class Curve{
@@ -503,12 +508,12 @@ vec4 centroid(const std::vector<vec4>& v){
 			centroid=centroid/v.size();
 			return centroid;
 }
-
+const float epsilon = 0.0001f;
 class TwoSlitLight: public Light{
 	std::vector<vec4> lampsXYZ;
 	float Amplitude=1;
-	vec4 center; //pontszerű fényforrás
-	float wavelength=0.526; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
+	vec4 cntr; //pontszerű fényforrás
+	float wavelength=0.24; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
 	vec3 rgb=vec3(78.0f/255.0f, 1, 0); //rgb(78,255, 0): kell normalizálni? számítás: https://academo.org/demos/wavelength-to-colour-relationship/
 	public:
 		TwoSlitLight(float targetRadiusOfCilinder=6, float targetUdistance=3, const mat4& transformMatrix=TranslateMatrix(vec3(0,0,0))):
@@ -527,8 +532,13 @@ class TwoSlitLight: public Light{
 			for(vec2 l:lamps){
 				lampsXYZ.emplace_back(cosf(l.x), sinf(l.x), l.y, 1);
 			}
-			for(vec4 l:lampsXYZ) l=l*transformMatrix;
-			center=centroid(lampsXYZ);
+
+			cntr=centroid(lampsXYZ);
+			cntr=cntr*TranslateMatrix(vec3(1-cosf(phi/2)+epsilon,0,0)); //eltoljuk, hogy a henger szélén legyen(ne benne)
+			cntr=cntr*transformMatrix;
+			for(vec4 l:lampsXYZ) l=l*transformMatrix; //translatematrix eltolni mindet epsilonnal, hogy ne a hengeren legyenek, hanem kívül
+			
+			
 
 		}
 		vec3 incidentRadiance(Hit hit)const override{
@@ -544,14 +554,17 @@ class TwoSlitLight: public Light{
 			return rad;
 		}
 		vec3 direction(Hit hit)const override{
-			vec3 ret= vec3(center.x, center.y, center.z)-hit.position;
+			vec3 ret= vec3(cntr.x, cntr.y, cntr.z)-hit.position;
 			return ret;
+		}
+		vec3 center()const override{
+			return vec3(cntr.x, cntr.y, cntr.z);
 		}
 };
 
 float rnd() { return (float)rand() / RAND_MAX; }
 
-const float epsilon = 0.0001f;
+
 
 
 
@@ -570,12 +583,19 @@ class Scene {
 		vec3 outRadiance=hit.material->ka * La;
 		for(Light* light:lights){
 			float cosTheta = dot(hit.normal, light->direction(hit));
-			Ray shadowRay(hit.position + hit.normal * epsilon, light->direction(hit));
-			if (cosTheta > 0 && !shadowIntersect(shadowRay)) {	// shadow computation
+			vec3 r=hit.position + hit.normal * epsilon;
+			Ray shadowRay(r, light->direction(hit));
+			Hit shadowHit=firstIntersect(shadowRay);
+			if (cosTheta > 0 && shadowHit.t<0 || shadowHit.t>length(r-light->center())) {	// shadow computation
 	 			outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->kd * cosTheta;
 	 			vec3 halfway = normalize(-ray.dir + light->direction(hit));
 	 			float cosDelta = dot(hit.normal, halfway);
-	 			if (cosDelta > 0) outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->ks * powf(cosDelta, hit.material->shininess);
+	 			if (cosDelta > 0){
+					
+					 float pow=powf(cosDelta, hit.material->shininess);
+					 vec3 ir_ks=light->incidentRadiance(hit) * hit.material->ks;
+					 outRadiance = outRadiance + ir_ks * pow;
+				 }
 	 		}
 			
 		}
@@ -599,7 +619,7 @@ class Scene {
 
 public:
 	void build() {
-		vec3 eye = vec3(7, -15, 0), vup = vec3(0, 0, 1), lookat = vec3(19, 0, 0);
+		vec3 eye = vec3(50, 0, 0), vup = vec3(0, 0, 1), lookat = vec3(0, 0, 0);
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
@@ -607,7 +627,7 @@ public:
 		vec3 lightDirection(1, 1, 1), Le(2, 2, 2);
 		lights.push_back(new DirectionalLight(lightDirection, Le));
 
-		vec3 kd(0.3f, 0.2f, 0.1f), ks(2, 2, 2);
+		vec3 kd(0.3f, 0.2f, 0.1f), ks(0.0f, 0.0f, 0.0f);
 		Material * material = new Material(kd, ks, 50);
 		// for (int i = 0; i < 500; i++) 
 		// 	objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
@@ -616,7 +636,7 @@ public:
 		objects.push_back(new Cilinder{cylinderTransform, material});
 		
 		lights.push_back(new TwoSlitLight{6, 3, cylinderTransform });
-		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*TranslateMatrix(vec3(19, 0,0)), material});
+		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*TranslateMatrix(vec3(100, 0,0)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
@@ -630,7 +650,7 @@ public:
 		}
 	}
 
-	Hit firstIntersect(Ray ray) {
+	Hit firstIntersect(Ray ray)const {
 		Hit bestHit;
 		for (Intersectable * object : objects) {
 			Hit hit = object->intersect(ray); //  hit.t < 0 if no intersection
