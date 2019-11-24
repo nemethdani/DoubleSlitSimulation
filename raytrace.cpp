@@ -131,7 +131,7 @@ bool operator==(const vec3& v1, const vec3& v2){
 }
 
 
-// Az alábbiakat a raytracing mintaprogram módosítával készítettem
+// Az alábbiakat a raytracing mintaprogram módosítával készítettem :http://cg.iit.bme.hu/portal/sites/default/files/oktatott%20t%C3%A1rgyak/sz%C3%A1m%C3%ADt%C3%B3g%C3%A9pes%20grafika/sug%C3%A1rk%C3%B6vet%C3%A9s/raytrace.cpp
 
 struct Material {
 	vec3 ka, kd, ks;
@@ -176,35 +176,7 @@ public:
 	Intersectable(const mat4& transformMatrix):Transformable(transformMatrix){};
 };
 
-// struct Sphere : public Intersectable {
-// 	vec3 center;
-// 	float radius;
 
-// 	Sphere(const vec3& _center, float _radius, Material* _material) {
-// 		center = _center;
-// 		radius = _radius;
-// 		material = _material;
-// 	}
-
-// 	Hit intersect(const Ray& ray) {
-// 		Hit hit;
-// 		vec3 dist = ray.start - center;
-// 		float a = dot(ray.dir, ray.dir);
-// 		float b = dot(dist, ray.dir) * 2.0f;
-// 		float c = dot(dist, dist) - radius * radius;
-// 		float discr = b * b - 4.0f * a * c;
-// 		if (discr < 0) return hit;
-// 		float sqrt_discr = sqrtf(discr);
-// 		float t1 = (-b + sqrt_discr) / 2.0f / a;	// t1 >= t2 for sure
-// 		float t2 = (-b - sqrt_discr) / 2.0f / a;
-// 		if (t1 <= 0) return hit;
-// 		hit.t = (t2 > 0) ? t2 : t1;
-// 		hit.position = ray.start + ray.dir * hit.t;
-// 		hit.normal = (hit.position - center) * (1.0f / radius);
-// 		hit.material = material;
-// 		return hit;
-// 	}
-// };
 
 struct mat2{
 	mat2(){};
@@ -526,24 +498,25 @@ vec4 centroid(const std::vector<vec4>& v){
 			centroid=centroid/v.size();
 			return centroid;
 }
+float length(const vec4& v) { return sqrtf(dot(v, v)); }
 const float epsilon = 0.0001f;
 class TwoSlitLight: public Light{
 	std::vector<vec4> lampsXYZ;
-	float Amplitude=0.01;
+	float amplitudeScaler=0.5; //ezzel tudom állítani az erősséget
 	vec4 cntr; //pontszerű fényforrás
 	float wavelength=0.526; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
-	vec3 rgb=vec3(78.0f, 1.0f, 0.0f); //rgb(78,255, 0): kell normalizálni? számítás: https://academo.org/demos/wavelength-to-colour-relationship/
+	vec3 rgb=vec3(78.0f/255.0f, 1.0f, 0.0f); //rgb(78,255, 0) számítás: https://academo.org/demos/wavelength-to-colour-relationship/
 	public:
 		TwoSlitLight(float targetRadiusOfCilinder=6, float targetUdistance=3, const mat4& transformMatrix=TranslateMatrix(vec3(0,0,0))):
 			Light(transformMatrix)
 			{
-			float baseUdistance=targetUdistance/targetRadiusOfCilinder;
+			float baseUdistance=targetUdistance/targetRadiusOfCilinder; // U szárainak távja az R=1 hengeren
 			float phi=2*asinf(baseUdistance/2);
 			std::vector<vec2> ctrpoints={vec2(-phi/2, 0.05f), vec2(-phi/2, -0.05f), vec2(phi/2, -0.05f), vec2(phi/2, 0.05f)};
 			BezierCurve bc(std::move(ctrpoints));
 			std::vector<vec2> lamps; // angle, Z
 			lamps.reserve(100);
-			for(Float t=0.0f;t<=99.0f/100.0f; t+=1.0f/(100.0f-1.0f))
+			for(Float t=0.0f;t<=1.0f; t+=1.0f/(100.0f-1.0f))
 				lamps.push_back(bc.r(float(t)));
 			
 			lampsXYZ.reserve(100);
@@ -562,10 +535,19 @@ class TwoSlitLight: public Light{
 		}
 		vec3 incidentRadiance(Hit hit)const override{
 			Complex superposition;
-			for(vec4 lamp: lampsXYZ){
+			float k=2*(M_PI)/wavelength;
+			for(size_t i=0;i<lampsXYZ.size();++i)
+			{
+				auto lamp=lampsXYZ.at(i);
 				float distance=length(hit.position-vec3(lamp.x, lamp.y, lamp.z));
-				float k=2*(M_PI)/wavelength; 
-				superposition=superposition+Polar(Amplitude/distance, k*distance); //t=0 => omega*t=0, fáziseltolódás=0 
+				//az ívhosszat ha két szomszédos lámpa közti távolsággal arányosítom (ha jól értettem, nem az U szárak közti ívhossz kell)
+				float intensity;
+				if(i==0) intensity=length(lamp-lampsXYZ.at(i+1))/2;
+				else if(i==lampsXYZ.size()-1) intensity=length(lamp-lampsXYZ.at(i-1))/2;
+				else{
+					intensity=length(lampsXYZ.at(i-1)-lampsXYZ.at(i+1))/2;
+				}
+				superposition=superposition+Polar(amplitudeScaler*sqrtf(intensity)/distance, k*distance); //t=0 => omega*t=0, fáziseltolódás=0, az amplitúdó az intenzitás gyöke?
 			}
 			
 			float energy=superposition.x*superposition.x+superposition.y*superposition.y; //R^2=x^2+y^2
@@ -625,29 +607,14 @@ class Scene {
 		return inDir - normal * dot(normal, inDir) * 2.0f;
 	};
 
-	// vec3 Fresnel(vec3 inDir, vec3 normal, Hit hit) {
-	// 	float cosa = -dot(inDir, normal); 
-	// 	vec3 one(1, 1, 1);
-	// 	float airReffractiveIndex=1.000293; //air
-	// 	float materialRefreactiveIndex=(*(hit.material)).reffractiveIndex;
-	// 	float n_=materialRefreactiveIndex/airReffractiveIndex;
-	// 	vec3 n(n_, n_, n_);
-	// 	vec3 F0 = ((n - one)*(n - one) + kappa*kappa) /	((n+one)*(n+one) + kappa*kappa); 
-	// 	return F0 + (one – F0) * pow(1-cosa, 5); 
-	// }
+	
 
 public:
 	void build() {
+		//nem sikerült olyan elrendezést találnom, melyen több interferenciasáv is látszik, de működnie kell.
 		mat4 rotation=RotationMatrix(0.1, vec3(0,0,1))*RotationMatrix(0.1, vec3(0,1,0))*RotationMatrix(0.1, vec3(1,0,0));
 		vec3 eye = vec3(10, 2, 0), vup = vec3(0, 0, 1), lookat = vec3(30, 0, 0);
 
-		// vec4 eye4(eye.x, eye.y, eye.z, 1);
-		// eye4=eye4*rotation;
-		// eye=vec3(eye4.x, eye4.y, eye4.z);
-
-		// vec4 vup4(vup.x, vup.y, vup.z, 0);
-		// vup4=vup4*rotation;
-		// vup=vec3(vup4.x, vup4.y, vup4.z);
 
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
@@ -656,22 +623,21 @@ public:
 		vec3 lightDirection(1, 1, 1), Le(1, 1, 1);
 		lights.push_back(new PointLight(TranslateMatrix(vec3(0,0,0)), Le, vec3(0,-8,0)));
 
-		vec3 kd(0.3f, 0.2f, 0.1f), ks(0.0f, 0.0f, 0.0f);
+		vec3 kd(0.2f, 0.2f, 0.2f), ks(0.1f, 0.1f, 0.1f);
 		Material * material = new Material(kd, ks, 50);
-		// for (int i = 0; i < 500; i++) 
-		// 	objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
+		
 
 		mat4 cylinderTransform=ScaleMatrix(vec3(6,6,1))*rotation;;
 		objects.push_back(new Cilinder{cylinderTransform, material});
 		
 		lights.push_back(new TwoSlitLight{6, 3, cylinderTransform });
-		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*rotation*TranslateMatrix(vec3(30, 0,0)), material});
+		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(7,7,30))*rotation*TranslateMatrix(vec3(30, 0,0)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
-		for (int Y = 0; Y < windowHeight; Y++) {
+		for (size_t Y = 0; Y < windowHeight; Y++) {
 #pragma omp parallel for
-			for (int X = 0; X < windowWidth; X++) {
+			for (size_t X = 0; X < windowWidth; X++) {
 				vec3 color = trace(camera.getRay(X, Y));
 				image[Y * windowWidth + X] = vec4(color.x, color.y, color.z, 1);
 				//printf("%d" "%d" "%s", X, X, "rendered\n");
@@ -691,22 +657,7 @@ public:
 
 	
 
-	// vec3 trace(Ray ray, int depth = 0) {
-	// 	Hit hit = firstIntersect(ray);
-	// 	if (hit.t < 0) return La;
-	// 	vec3 outRadiance = hit.material->ka * La;
-	// 	for (Light * light : lights) {
-	// 		Ray shadowRay(hit.position + hit.normal * epsilon, light->direction(hit));
-	// 		float cosTheta = dot(hit.normal, light->direction(hit));
-	// 		if (cosTheta > 0 && !shadowIntersect(shadowRay)) {	// shadow computation
-	// 			outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->kd * cosTheta;
-	// 			vec3 halfway = normalize(-ray.dir + light->direction(hit));
-	// 			float cosDelta = dot(hit.normal, halfway);
-	// 			if (cosDelta > 0) outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->ks * powf(cosDelta, hit.material->shininess);
-	// 		}
-	// 	}
-	// 	return outRadiance;
-	// }
+
 
 	vec3 trace(Ray ray, int d=0, int maxdepth=8) {
 		if (d > maxdepth) return La;
@@ -715,19 +666,7 @@ public:
 		vec3 outRad(0, 0, 0);
 		if(hit.material->rough) outRad  =  DirectLight(hit, ray);
 
-		// if(hit.material->reflective){
-		// 	vec3 reflectionDir = reflect(ray.dir,hit.normal);
-		// 	Ray reflectRay(hit.position + hit.normal * epsilon, reflectionDir);
-		// 	outRad += trace(reflectRay,d+1)*Fresnel(ray.dir,N);
-		// }
-		// if(hit.material->refractive) {
-		// 	ior = (ray.out) ? n.x : 1/n.x;
-		// 	vec3 refractionDir = refract(ray.dir,N,ior);
-		// 	if (length(refractionDir) > 0) {
-		// 	Ray refractRay(r - N, refractionDir, !ray.out);
-		// 	outRad += trace(refractRay,d+1)*(vec3(1,1,1)–Fresnel(ray.dir,N));
-		// 	}
-		// }
+	
 		return outRad;
 	}
 };
@@ -813,7 +752,7 @@ void onInitialization() {
 	long timeStart = glutGet(GLUT_ELAPSED_TIME);
 	scene.render(image);
 	long timeEnd = glutGet(GLUT_ELAPSED_TIME);
-	printf("Rendering time: %d milliseconds\n", (timeEnd - timeStart));
+	printf("Rendering time: %d milliseconds\n", (int)(timeEnd - timeStart));
 
 	// copy image to GPU as a texture
 	fullScreenTexturedQuad = new FullScreenTexturedQuad(windowWidth, windowHeight, image);
