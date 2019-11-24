@@ -502,7 +502,7 @@ float length(const vec4& v) { return sqrtf(dot(v, v)); }
 const float epsilon = 0.0001f;
 class TwoSlitLight: public Light{
 	std::vector<vec4> lampsXYZ;
-	float amplitudeScaler=0.5; //ezzel tudom állítani az erősséget
+	float amplitudeScaler=1; //ezzel tudom állítani az erősséget
 	vec4 cntr; //pontszerű fényforrás
 	float wavelength=0.526; //um=micrometer, mindenhol ezt a mértékegységet használom, hondolom itt is ez kell
 	vec3 rgb=vec3(78.0f/255.0f, 1.0f, 0.0f); //rgb(78,255, 0) számítás: https://academo.org/demos/wavelength-to-colour-relationship/
@@ -512,7 +512,7 @@ class TwoSlitLight: public Light{
 			{
 			float baseUdistance=targetUdistance/targetRadiusOfCilinder; // U szárainak távja az R=1 hengeren
 			float phi=2*asinf(baseUdistance/2);
-			std::vector<vec2> ctrpoints={vec2(-phi/2, 0.05f), vec2(-phi/2, -0.05f), vec2(phi/2, -0.05f), vec2(phi/2, 0.05f)};
+			std::vector<vec2> ctrpoints={vec2(-phi/2, 0.025f), vec2(-phi/2, -0.025f), vec2(phi/2, -0.025f), vec2(phi/2, 0.025f)};
 			BezierCurve bc(std::move(ctrpoints));
 			std::vector<vec2> lamps; // angle, Z
 			lamps.reserve(100);
@@ -611,7 +611,7 @@ class Scene {
 
 public:
 	void build() {
-		//nem sikerült olyan elrendezést találnom, melyen több interferenciasáv is látszik, de működnie kell.
+		// a sakktáblaminta alighanem azért van, mert nem rést vágtunk, hanem diszkrét lámpákat használtunk, és a szomszédosak is interferálnak
 		mat4 rotation=RotationMatrix(0.1, vec3(0,0,1))*RotationMatrix(0.1, vec3(0,1,0))*RotationMatrix(0.1, vec3(1,0,0));
 		vec3 eye = vec3(10, 2, 0), vup = vec3(0, 0, 1), lookat = vec3(30, 0, 0);
 
@@ -630,7 +630,7 @@ public:
 		mat4 cylinderTransform=ScaleMatrix(vec3(6,6,1))*rotation;;
 		objects.push_back(new Cilinder{cylinderTransform, material});
 		
-		lights.push_back(new TwoSlitLight{6, 3, cylinderTransform });
+		lights.push_back(new TwoSlitLight{6, 10, cylinderTransform });
 		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(7,7,30))*rotation*TranslateMatrix(vec3(30, 0,0)), material});
 	}
 
