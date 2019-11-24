@@ -437,10 +437,28 @@ public:
 
 struct Light: public Transformable{
 	virtual vec3 incidentRadiance(Hit hit)const=0;
-	virtual vec3 direction(Hit hit)const=0;
+	virtual vec3 direction(Hit hit)const=0; //normalized, lámpába mutat
 	virtual vec3 center()const=0;
 	vec3 Le;
 	using Transformable::Transformable;
+};
+
+struct PointLight: public Light{
+	vec3 position;
+	PointLight(const mat4& transformMatrix, const vec3& Le_, const vec3& position):
+		Light(transformMatrix),
+		position(position)
+		{
+			Le=Le_;
+		}
+	vec3 incidentRadiance(Hit hit)const override{
+		float distance=length(hit.position-position);
+		return Le/(distance*distance);
+	}
+	vec3 direction(Hit hit)const override{
+		return normalize(position-hit.position);
+	}
+	vec3 center()const override{return position;}
 };
 
 struct DirectionalLight: public Light {
@@ -587,7 +605,7 @@ class Scene {
 			vec3 r=hit.position + hit.normal * epsilon;
 			Ray shadowRay(r, light->direction(hit));
 			Hit shadowHit=firstIntersect(shadowRay);
-			if (cosTheta > 0 && shadowHit.t<0 || shadowHit.t>length(r-light->center())) {	// shadow computation
+			if (cosTheta > 0 && (shadowHit.t<0 || shadowHit.t>length(r-light->center()))) {	// shadow computation
 	 			outRadiance = outRadiance + light->incidentRadiance(hit) * hit.material->kd * cosTheta;
 	 			vec3 halfway = normalize(-ray.dir + light->direction(hit));
 	 			float cosDelta = dot(hit.normal, halfway);
@@ -620,24 +638,34 @@ class Scene {
 
 public:
 	void build() {
-		vec3 eye = vec3(6, 0, 0), vup = vec3(0, 0, 1), lookat = vec3(30, 0, 0);
+		mat4 rotation=RotationMatrix(0.1, vec3(0,0,1))*RotationMatrix(0.1, vec3(0,1,0))*RotationMatrix(0.1, vec3(1,0,0));
+		vec3 eye = vec3(10, 2, 0), vup = vec3(0, 0, 1), lookat = vec3(30, 0, 0);
+
+		// vec4 eye4(eye.x, eye.y, eye.z, 1);
+		// eye4=eye4*rotation;
+		// eye=vec3(eye4.x, eye4.y, eye4.z);
+
+		// vec4 vup4(vup.x, vup.y, vup.z, 0);
+		// vup4=vup4*rotation;
+		// vup=vec3(vup4.x, vup4.y, vup4.z);
+
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
 		La = vec3(0.4f, 0.4f, 0.4f);
-		vec3 lightDirection(1, 1, 1), Le(2, 2, 2);
-		lights.push_back(new DirectionalLight(lightDirection, Le));
+		vec3 lightDirection(1, 1, 1), Le(1, 1, 1);
+		lights.push_back(new PointLight(TranslateMatrix(vec3(0,0,0)), Le, vec3(0,-8,0)));
 
 		vec3 kd(0.3f, 0.2f, 0.1f), ks(0.0f, 0.0f, 0.0f);
 		Material * material = new Material(kd, ks, 50);
 		// for (int i = 0; i < 500; i++) 
 		// 	objects.push_back(new Sphere(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f), rnd() * 0.1f, material));
 
-		mat4 cylinderTransform=ScaleMatrix(vec3(6,6,1));
+		mat4 cylinderTransform=ScaleMatrix(vec3(6,6,1))*rotation;;
 		objects.push_back(new Cilinder{cylinderTransform, material});
 		
 		lights.push_back(new TwoSlitLight{6, 3, cylinderTransform });
-		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*TranslateMatrix(vec3(30, 0,0)), material});
+		objects.push_back(new Hyperboloid_ofOneSheet{ScaleMatrix(vec3(6,6,30))*rotation*TranslateMatrix(vec3(30, 0,0)), material});
 	}
 
 	void render(std::vector<vec4>& image) {
