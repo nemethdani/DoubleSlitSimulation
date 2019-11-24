@@ -412,7 +412,7 @@ struct Light: public Transformable{
 	virtual vec3 direction(Hit hit)const=0; //normalized, lámpába mutat
 	virtual vec3 center()const=0;
 	vec3 Le;
-	using Transformable::Transformable;
+	Light(const mat4& m):Transformable(m){};
 };
 
 struct PointLight: public Light{
@@ -464,7 +464,7 @@ class BezierCurve : public Curve {
 		return choose * pow(t, i) * pow(1 - t, n - i);
 	}
 public:
-	using Curve::Curve;
+	BezierCurve(std::vector<vec2> ctrl):Curve(ctrl){};
 	vec2 r(float t) {
 		vec2 wPoint = vec2(0, 0);
 		for (unsigned int n = 0; n < wCtrlPoints.size(); n++) wPoint = wPoint+ wCtrlPoints[n] * B(n, t);
@@ -513,7 +513,7 @@ class TwoSlitLight: public Light{
 			float baseUdistance=targetUdistance/targetRadiusOfCilinder; // U szárainak távja az R=1 hengeren
 			float phi=2*asinf(baseUdistance/2);
 			std::vector<vec2> ctrpoints={vec2(-phi/2, 0.025f), vec2(-phi/2, -0.025f), vec2(phi/2, -0.025f), vec2(phi/2, 0.025f)};
-			BezierCurve bc(std::move(ctrpoints));
+			BezierCurve bc(ctrpoints);
 			std::vector<vec2> lamps; // angle, Z
 			lamps.reserve(100);
 			for(Float t=0.0f;t<=1.0f; t+=1.0f/(100.0f-1.0f))
